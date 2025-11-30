@@ -46,9 +46,7 @@ COLUMN_SIGNATURE = 14
 COLUMN_NOTE = 15
 
 SIGNATURE_COLUMNS = {COLUMN_DATE, COLUMN_SIGNATURE, COLUMN_NOTE}
-VALUE_COLUMNS = {COLUMN_RECORD_NUM, COLUMN_NAME, COLUMN_ADDRESS, COLUMN_EGN}
-KEY_COLUMNS = VALUE_COLUMNS | SIGNATURE_COLUMNS
-
+TXT_COLUMNS = {COLUMN_RECORD_NUM, COLUMN_NAME, COLUMN_ADDRESS, COLUMN_EGN}
 
 COL_AVG_WIDTHS = [
     145,
@@ -160,22 +158,38 @@ def find_cells(table_img) -> list[CellCoord]:
 def group_cells_by_row(cells: list[CellCoord], y_threshold):
     # Ensure we have CellCoord objects and group by Y proximity.
 
-    rows: list[list[CellCoord]] = []
-    row_y = 0
-    for i, cell in enumerate(reversed(cells)):
+    rows: list[list[CellCoord]] = [[]]
+    cells.sort(key=lambda c: c.y)
+    row_y = cells[0].y
+    row = rows[0]
+
+    for cell in cells:
         placed = False
-        for row in rows:
-            if abs(cell.y - row_y) < y_threshold:
-                row.append(cell)
-                placed = True
-                break
+
+        if abs(cell.y - row_y) < y_threshold:
+            row.append(cell)
+            placed = True
+            row_y = (cell.y + row_y) // 2
 
         if not placed:
-            rows.append([cell])
+            row = [cell]
+            rows.append(row)
             row_y = cell.y
+
     for row in rows:
         row.sort(key=lambda c: c.x)
     return rows
+
+
+def draw_cell_img(cell: CellCoord, img: Image.Image, clr=RED) -> Image.Image:
+    x, y, w, h = cell
+    arr = cv2.rectangle(np.array(img), (x, y), (x + w, y + h), clr, 2)
+    return Image.fromarray(arr)
+
+
+def draw_cell_arr(cell: CellCoord, arr: np.ndarray, clr=RED) -> np.ndarray:
+    x, y, w, h = cell
+    return cv2.rectangle(arr, (x, y), (x + w, y + h), clr, 2)
 
 
 @dataclass
@@ -194,17 +208,16 @@ def reconstruct_missing_cells(page: Page):
         if len(row) == N_COLUMNS:
             continue
         logger.error(
-            f"Page {page.pagenum}: Expected {N_COLUMNS} columns, found {len(row)}"
+            f"Page {page.pdf_name}, page {page.pagenum}, row {row_ndx}, N columns {len(row)}, expected {N_COLUMNS}"
         )
         created = []
-        for col_ndx, cell in enumerate(row):
+
+        for col_ndx in range(N_COLUMNS):
             avg_w = COL_AVG_WIDTHS[col_ndx]
             avg_x = COL_AVG_XS[col_ndx]
-            x, w = cell.x, cell.w
-            if (
-                abs(w - cell.w) > CELL_ROW_Y_THRESHOLD
-                and abs(x - avg_x) > CELL_ROW_X_THRESHOLD
-            ):
+            cell = row[col_ndx] if col_ndx < len(row) else row[-1]
+
+            if abs(cell.x - avg_x) > CELL_ROW_X_THRESHOLD:
                 new = CellCoord(x=avg_x, y=cell.y, w=avg_w, h=cell.h)
                 created.append(new)
                 reconstructed[(row_ndx, col_ndx)] = new
@@ -215,7 +228,7 @@ def reconstruct_missing_cells(page: Page):
     page.reconstructed = reconstructed or None
 
 
-def process_pdf(pdf):
+def process_pdf(pdf: Path):
     logging.info(f"Processing File: {pdf.name} - started")
     images = pdf_to_images(pdf)
     logger.debug(f"Extracted {len(images)} pages")
@@ -224,7 +237,7 @@ def process_pdf(pdf):
     for pagenum, image in enumerate(images):
         image = image.transpose(Image.Transpose.ROTATE_90)
         if pagenum == 0:
-            image = crop_image_top(image, perc=20)
+            image = crop_image_bottom(image, perc=25)
 
         bw = preprocess(image)
         vertical = get_vertical_lines(bw, sensitivity=30)
@@ -232,6 +245,8 @@ def process_pdf(pdf):
 
         table_lines = combine_lines(vertical, horizontal)
         cells = find_cells(table_lines)
+        if not cells:
+            ValueError(f"Failed to find table in page {pagenum}, file: {pdf.name}")
         table_border = cells.pop(0)
         rows = group_cells_by_row(cells, y_threshold=CELL_ROW_Y_THRESHOLD)
         page = Page(
@@ -270,34 +285,36 @@ def process_ocr(page: Page) -> list[ResultRecord]:
     for _, row in enumerate(page.rows):
         record = ResultRecord(pdf=page.pdf_name, page=page.pagenum)
         for col_ndx, cell in enumerate(row):
-            if col_ndx not in KEY_COLUMNS:
-                continue
-            x, y, w, h = (
-                cell.x + CELL_PADDING,
-                cell.y + CELL_PADDING,
-                cell.w - 2 * CELL_PADDING,
-                cell.h - 2 * CELL_PADDING,
-            )
-            cell_arr = img_arr[y : y + h, x : x + w]
-            cell_img = Image.fromarray(cell_arr)
-            if col_ndx not in VALUE_COLUMNS:
-                continue
+            if col_ndx in TXT_COLUMNS:
+                x, y, w, h = cell
+                cell_arr = img_arr[y : y + h, x : x + w]
+                cell_img = Image.fromarray(cell_arr)
 
-            text = pytesseract.image_to_string(cell_img, lang="bul").strip()
+                text = pytesseract.image_to_string(cell_img, lang="bul").strip()
 
-            if col_ndx in {COLUMN_RECORD_NUM, COLUMN_EGN}:
-                m = re.search(r"\b\d\b", text)
-                number = int(m.group(0)) if m else None
-                if col_ndx == COLUMN_RECORD_NUM:
-                    record.number = number
-                if col_ndx == COLUMN_EGN:
-                    record.egn = number
-            elif col_ndx == COLUMN_NAME:
-                record.name = text
-            elif col_ndx == COLUMN_ADDRESS:
-                record.address = text
+                if col_ndx in {COLUMN_RECORD_NUM, COLUMN_EGN}:
+                    m = re.search(r"\b\d+\b", text)
+                    number = int(m.group(0)) if m else None
+                    if col_ndx == COLUMN_RECORD_NUM:
+                        record.number = number
+                    if col_ndx == COLUMN_EGN:
+                        record.egn = number
+                elif col_ndx == COLUMN_NAME:
+                    record.name = text
+                elif col_ndx == COLUMN_ADDRESS:
+                    record.address = text
 
             elif col_ndx in SIGNATURE_COLUMNS:
+                x, y, w, h = (
+                    cell.x + CELL_PADDING,
+                    cell.y + CELL_PADDING,
+                    cell.w - 2 * CELL_PADDING,
+                    cell.h - 2 * CELL_PADDING,
+                )
+                cell_arr = img_arr[y : y + h, x : x + w]
+                # TODO: remove bellow
+                cell_img = Image.fromarray(cell_arr)
+
                 gray = cv2.cvtColor(cell_arr, cv2.COLOR_BGR2GRAY)
                 _, thresh = cv2.threshold(gray, 200, 255, cv2.THRESH_BINARY_INV)
                 ink_pixels = cv2.countNonZero(thresh)
