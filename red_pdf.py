@@ -1,7 +1,7 @@
 from dataclasses import asdict, dataclass, fields
+from datetime import datetime
 import csv
 from cv2.typing import MatLike
-import os
 from pathlib import Path
 from typing import TypeAlias
 
@@ -24,13 +24,14 @@ BLUE = (0, 0, 255)
 RED = (255, 0, 0)
 GREEN = (0, 255, 0)
 
-INC_THRESHOLD_MIN = 500
-INC_THRESHOLD_MID = 1000
-INC_THRESHOLD_MAX = 1500
+INC_THRESHOLD_MIN = 600
+INC_THRESHOLD_MID = 1200
+INC_THRESHOLD_MAX = 1800
 
 CELL_ROW_Y_THRESHOLD = 25
 CELL_ROW_X_THRESHOLD = 25
-CELL_PADDING = 5
+SIGNATURE_CELL_PADDING = 10
+TEXT_CELL_PADDING = 5
 
 N_COLUMNS = 16
 
@@ -46,7 +47,7 @@ COLUMN_SIGNATURE = 14
 COLUMN_NOTE = 15
 
 SIGNATURE_COLUMNS = {COLUMN_DATE, COLUMN_SIGNATURE, COLUMN_NOTE}
-TXT_COLUMNS = {COLUMN_RECORD_NUM, COLUMN_NAME, COLUMN_ADDRESS, COLUMN_EGN}
+TEXT_COLUMNS = {COLUMN_RECORD_NUM, COLUMN_NAME, COLUMN_ADDRESS, COLUMN_EGN}
 
 COL_AVG_WIDTHS = [
     145,
@@ -207,7 +208,7 @@ def reconstruct_missing_cells(page: Page):
     for row_ndx, row in enumerate(page.rows):
         if len(row) == N_COLUMNS:
             continue
-        logger.error(
+        logger.warning(
             f"Page {page.pdf_name}, page {page.pagenum}, row {row_ndx}, N columns {len(row)}, expected {N_COLUMNS}"
         )
         created = []
@@ -270,12 +271,11 @@ class ResultRecord:
     name: str | None = None
     address: str | None = None
     egn: int | None = None
-    has_date: bool | None = None
-    has_signature: bool | None = None
-    has_note: bool | None = None
-    confidence: float = 0
-    pdf: str = ""
+    date: float | None = None
+    signature: float | None = None
+    note: float | None = None
     page: int = -1
+    pdf: str = ""
 
 
 def process_ocr(page: Page) -> list[ResultRecord]:
@@ -285,8 +285,13 @@ def process_ocr(page: Page) -> list[ResultRecord]:
     for _, row in enumerate(page.rows):
         record = ResultRecord(pdf=page.pdf_name, page=page.pagenum)
         for col_ndx, cell in enumerate(row):
-            if col_ndx in TXT_COLUMNS:
-                x, y, w, h = cell
+            if col_ndx in TEXT_COLUMNS:
+                x, y, w, h = (
+                    cell.x + TEXT_CELL_PADDING,
+                    cell.y + TEXT_CELL_PADDING,
+                    cell.w - 2 * TEXT_CELL_PADDING,
+                    cell.h - 2 * TEXT_CELL_PADDING,
+                )
                 cell_arr = img_arr[y : y + h, x : x + w]
                 cell_img = Image.fromarray(cell_arr)
 
@@ -306,15 +311,12 @@ def process_ocr(page: Page) -> list[ResultRecord]:
 
             elif col_ndx in SIGNATURE_COLUMNS:
                 x, y, w, h = (
-                    cell.x + CELL_PADDING,
-                    cell.y + CELL_PADDING,
-                    cell.w - 2 * CELL_PADDING,
-                    cell.h - 2 * CELL_PADDING,
+                    cell.x + SIGNATURE_CELL_PADDING,
+                    cell.y + SIGNATURE_CELL_PADDING,
+                    cell.w - 2 * SIGNATURE_CELL_PADDING,
+                    cell.h - 2 * SIGNATURE_CELL_PADDING,
                 )
                 cell_arr = img_arr[y : y + h, x : x + w]
-                # TODO: remove bellow
-                cell_img = Image.fromarray(cell_arr)
-
                 gray = cv2.cvtColor(cell_arr, cv2.COLOR_BGR2GRAY)
                 _, thresh = cv2.threshold(gray, 200, 255, cv2.THRESH_BINARY_INV)
                 ink_pixels = cv2.countNonZero(thresh)
@@ -325,14 +327,12 @@ def process_ocr(page: Page) -> list[ResultRecord]:
                     confidence = 0.6
                 elif INC_THRESHOLD_MIN < ink_pixels:
                     confidence = 0.3
-                has_ink = confidence > 0
-                record.confidence = confidence
                 if col_ndx == COLUMN_DATE:
-                    record.has_date = has_ink
+                    record.date = confidence
                 elif col_ndx == COLUMN_SIGNATURE:
-                    record.has_signature = has_ink
+                    record.signature = confidence
                 elif col_ndx == COLUMN_NOTE:
-                    record.has_note = has_ink
+                    record.note = confidence
 
         records.append(record)
     return records
@@ -344,7 +344,8 @@ def write_records_csv(records: list[ResultRecord], out_path):
     - `records` may be empty; a CSV with only headers will be created.
     - `out_path` can be a `str` or `pathlib.Path`.
     """
-    out_path = Path(out_path)
+    now = datetime.now().strftime("%d-%m-%Y_%H:%M.%S")
+    out_path = Path(out_path).joinpath(f"report_{now}.csv")
     field_names = [f.name for f in fields(ResultRecord)]
 
     with out_path.open("w", newline="", encoding="utf-8") as fh:
@@ -356,7 +357,6 @@ def write_records_csv(records: list[ResultRecord], out_path):
 
 
 def main(src_folder):
-    curr_folder = os.getcwd()
     pdfs = Path(src_folder).glob("*.pdf")
     if not pdfs:
         raise FileNotFoundError(f"No PDF files found in {src_folder} folder")
@@ -367,13 +367,14 @@ def main(src_folder):
         for page in pages:
             ocr_results = process_ocr(page=page)
             records.extend(ocr_results)
-    write_records_csv(records=records, out_path=curr_folder)
+    write_records_csv(records=records, out_path=src_folder)
 
 
 if __name__ == "__main__":
     import sys
 
     logging.basicConfig(level=logging.DEBUG)
+    logging.getLogger("pytesseract").setLevel(logging.WARNING)
     if not len(sys.argv) == 2:
         ValueError("Please provide source folder path as argument")
     main(src_folder=sys.argv[1])
