@@ -2,3 +2,4 @@ pdf2image
 pytesseract
 opencv-python
 pillow
+PySide6

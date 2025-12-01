@@ -13,5 +13,18 @@ pillow==12.0.0
     #   -r requirements.in
     #   pdf2image
     #   pytesseract
+pyside6==6.10.1
+    # via -r requirements.in
+pyside6-addons==6.10.1
+    # via pyside6
+pyside6-essentials==6.10.1
+    # via
+    #   pyside6
+    #   pyside6-addons
 pytesseract==0.3.13
     # via -r requirements.in
+shiboken6==6.10.1
+    # via
+    #   pyside6
+    #   pyside6-addons
+    #   pyside6-essentials

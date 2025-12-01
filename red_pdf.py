@@ -3,7 +3,7 @@ from datetime import datetime
 import csv
 from cv2.typing import MatLike
 from pathlib import Path
-from typing import TypeAlias
+from typing import Any, Callable, TypeAlias
 
 from pdf2image import convert_from_path
 import pytesseract  # type: ignore
@@ -373,19 +373,41 @@ def write_log(now, report_name, reconstructed):
                 f.write(f"\t{k}, ({row}, {col})\n")
 
 
-def main(src_folder):
+def main(
+    src_folder, progress_callback: Callable[[str, int | None], None] | None = None
+) -> str:
+    if progress_callback is None:
+
+        def dummy(*_: Any):
+            pass
+
+        progress_callback = dummy
+
     if not Path(src_folder).exists():
         raise FileExistsError(f"Source folder {src_folder} not found")
-    pdfs = Path(src_folder).glob("*.pdf")
+    pdfs = list(Path(src_folder).glob("*.pdf"))
     if not pdfs:
         raise FileNotFoundError(f"No PDF files found in {src_folder} folder")
 
     records = []
     reconstructed = {}
-    for pdf in pdfs:
+    pdf_step = 100 // len(pdfs)
+
+    for n, pdf in enumerate(pdfs):
+        progress = pdf_step * n
+        progress_msg = f"File {(n + 1)}/{len(pdfs)}, {pdf.name}"
+
+        progress_callback(progress_msg + ": reading page images", progress)
         pages = process_pdf(pdf=pdf)
-        pages.extend
+
+        page_step = pdf_step // len(pages)
+
         for page in pages:
+            page_progress = progress + page_step * page.pagenum
+            progress_callback(
+                progress_msg + f": analyzing page {(page.pagenum + 1)}/{len(pages)}",
+                page_progress,
+            )
             ocr_results = process_ocr(page=page)
             records.extend(ocr_results)
             if page.reconstructed:
@@ -394,12 +416,12 @@ def main(src_folder):
     now = datetime.now().strftime("%d-%m-%Y_%H:%M.%S")
     out_path = Path(src_folder).joinpath(f"report_{now}.csv")
     write_records_csv(records=records, out_path=out_path)
-
     if reconstructed:
         try:
             write_log(now, out_path.absolute(), reconstructed)
         except Exception:
             pass
+    return str(out_path.absolute())
 
 
 if __name__ == "__main__":
