@@ -36,7 +36,7 @@ if %PYTHON_FOUND% neq 0 (
         echo Downloading Python 3.12 installer...
 
         set PYTHON_URL=https://www.python.org/ftp/python/3.12.0/python-3.12.0-amd64.exe
-        set PYTHON_INSTALLER=python-3.12.0-amd64.exe
+        set PYTHON_INSTALLER="python-3.12.0-amd64.exe"
 
         curl -L "%PYTHON_URL%" -o "%PYTHON_INSTALLER%"
         if not exist "%PYTHON_INSTALLER%" (
@@ -45,33 +45,33 @@ if %PYTHON_FOUND% neq 0 (
             goto :end
         )
 
-        echo Running Python installer...
-        :: Use start /wait so cmd does NOT get closed by Windows
-        start /wait "" "%PYTHON_INSTALLER%" /passive InstallAllUsers=1 PrependPath=1 Include_pip=1
+        @REM echo Running Python installer...
+        @REM :: Use start /wait so cmd does NOT get closed by Windows
+        @REM start /wait "" "%PYTHON_INSTALLER%" /passive InstallAllUsers=1 PrependPath=1 Include_pip=1
 
-        echo Waiting for installation to finish...
-        timeout /t 3 >nul
+        @REM echo Waiting for installation to finish...
+        @REM timeout /t 3 >nul
 
-        :: Re-check python (PATH may not be updated yet)
-        python --version >nul 2>&1
-        if %errorlevel% neq 0 (
-            echo Python still not found — manually adding to PATH...
+        @REM :: Re-check python (PATH may not be updated yet)
+        @REM python --version >nul 2>&1
+        @REM if %errorlevel% neq 0 (
+        @REM     echo Python still not found — manually adding to PATH...
 
-            :: Try standard install paths
-            if exist "C:\Program Files\Python312\python.exe" (
-                setx PATH "%PATH%;C:\Program Files\Python312\;C:\Program Files\Python312\Scripts\" >nul
-            ) else if exist "%LocalAppData%\Programs\Python\Python312\python.exe" (
-                setx PATH "%PATH%;%LocalAppData%\Programs\Python\Python312\;%LocalAppData%\Programs\Python\Python312\Scripts\" >nul
-            )
+        @REM     :: Try standard install paths
+        @REM     if exist "C:\Program Files\Python312\python.exe" (
+        @REM         setx PATH "%PATH%;C:\Program Files\Python312\;C:\Program Files\Python312\Scripts\" >nul
+        @REM     ) else if exist "%LocalAppData%\Programs\Python\Python312\python.exe" (
+        @REM         setx PATH "%PATH%;%LocalAppData%\Programs\Python\Python312\;%LocalAppData%\Programs\Python\Python312\Scripts\" >nul
+        @REM     )
 
-            :: Try again
-            python --version >nul 2>&1
-            if %errorlevel% neq 0 (
-                echo Python installation failed.
-                set EXIT_CODE=1
-                goto :end
-            )
-        )
+        @REM     :: Try again
+        @REM     python --version >nul 2>&1
+        @REM     if %errorlevel% neq 0 (
+        @REM         echo Python installation failed.
+        @REM         set EXIT_CODE=1
+        @REM         goto :end
+        @REM     )
+        @REM )
 
     ) else (
         echo Python installation aborted.
@@ -100,7 +100,7 @@ if %TESS_FOUND% neq 0 (
         echo Downloading Tesseract installer...
 
         set TESS_URL=https://digi.bib.uni-mannheim.de/tesseract/tesseract-ocr-w64-setup-5.3.4.20240503.exe
-        set TESS_INSTALLER=tesseract-ocr-w64-setup-5.3.4.20240503.exe
+        set TESS_INSTALLER="tesseract-ocr-w64-setup-5.3.4.20240503.exe"
 
         curl -L "%TESS_URL%" -o "%TESS_INSTALLER%"
         if not exist "%TESS_INSTALLER%" (
@@ -109,18 +109,6 @@ if %TESS_FOUND% neq 0 (
             goto :end
         )
 
-        echo Running Tesseract installer...
-        start /wait "" "%TESS_INSTALLER%" /SILENT
-
-        echo Waiting for installation...
-        timeout /t 2 >nul
-
-        where tesseract >nul 2>&1
-        if %errorlevel% neq 0 (
-            echo Tesseract installation failed.
-            set EXIT_CODE=1
-            goto :end
-        )
     ) else (
         echo Tesseract installation skipped.
     )
