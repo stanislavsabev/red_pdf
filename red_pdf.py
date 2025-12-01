@@ -28,8 +28,9 @@ INC_THRESHOLD_MIN = 600
 INC_THRESHOLD_MID = 1200
 INC_THRESHOLD_MAX = 1800
 
-CELL_ROW_Y_THRESHOLD = 25
+CELL_ROW_Y_THRESHOLD = 30
 CELL_ROW_X_THRESHOLD = 25
+CELL_COLUMN_W_THRESHOLD = 25
 SIGNATURE_CELL_PADDING = 10
 TEXT_CELL_PADDING = 5
 
@@ -222,14 +223,23 @@ def reconstruct_missing_cells(page: Page):
                 new = CellCoord(x=avg_x, y=cell.y, w=avg_w, h=cell.h)
                 created.append(new)
                 reconstructed[(row_ndx, col_ndx)] = new
-                logger.error(f"  Reconstructed cell at ({row_ndx}, {col_ndx})")
+                logger.warning(f"  Reconstructed cell at ({row_ndx}, {col_ndx})")
+            elif abs(cell.w - avg_w) > CELL_COLUMN_W_THRESHOLD:
+                new = CellCoord(x=cell.x, y=cell.y, w=avg_w, h=cell.h)
+                if col_ndx < len(row):
+                    row[col_ndx] = new
+                else:
+                    created.append(new)
+                reconstructed[(row_ndx, col_ndx)] = new
+                logger.warning(f"  Reconstructed cell at ({row_ndx}, {col_ndx})")
+
         for cell in created:
             row.append(cell)
             row.sort(key=lambda c: c.x)
     page.reconstructed = reconstructed or None
 
 
-def process_pdf(pdf: Path):
+def process_pdf(pdf: Path) -> list[Page]:
     logging.info(f"Processing File: {pdf.name} - started")
     images = pdf_to_images(pdf)
     logger.debug(f"Extracted {len(images)} pages")
@@ -338,14 +348,12 @@ def process_ocr(page: Page) -> list[ResultRecord]:
     return records
 
 
-def write_records_csv(records: list[ResultRecord], out_path):
+def write_records_csv(records: list[ResultRecord], out_path: Path):
     """Write a list of ResultRecord dataclass instances to a CSV file.
 
     - `records` may be empty; a CSV with only headers will be created.
     - `out_path` can be a `str` or `pathlib.Path`.
     """
-    now = datetime.now().strftime("%d-%m-%Y_%H:%M.%S")
-    out_path = Path(out_path).joinpath(f"report_{now}.csv")
     field_names = [f.name for f in fields(ResultRecord)]
 
     with out_path.open("w", newline="", encoding="utf-8") as fh:
@@ -356,18 +364,42 @@ def write_records_csv(records: list[ResultRecord], out_path):
             writer.writerow(row)
 
 
+def write_log(now, report_name, reconstructed):
+    with open("log.log", mode="w") as f:
+        f.write(f"{now}, {report_name}:\n")
+        f.write(f"\treconstructed {len(reconstructed)} tables\n")
+        for k, cells in reconstructed.items():
+            for row, col in list(cells):
+                f.write(f"\t{k}, ({row}, {col})\n")
+
+
 def main(src_folder):
+    if not Path(src_folder).exists():
+        raise FileExistsError(f"Source folder {src_folder} not found")
     pdfs = Path(src_folder).glob("*.pdf")
     if not pdfs:
         raise FileNotFoundError(f"No PDF files found in {src_folder} folder")
 
     records = []
+    reconstructed = {}
     for pdf in pdfs:
         pages = process_pdf(pdf=pdf)
+        pages.extend
         for page in pages:
             ocr_results = process_ocr(page=page)
             records.extend(ocr_results)
-    write_records_csv(records=records, out_path=src_folder)
+            if page.reconstructed:
+                reconstructed[f"{page.pdf_name}:{page.pagenum}"] = page.reconstructed
+
+    now = datetime.now().strftime("%d-%m-%Y_%H:%M.%S")
+    out_path = Path(src_folder).joinpath(f"report_{now}.csv")
+    write_records_csv(records=records, out_path=out_path)
+
+    if reconstructed:
+        try:
+            write_log(now, out_path.absolute(), reconstructed)
+        except Exception:
+            pass
 
 
 if __name__ == "__main__":
