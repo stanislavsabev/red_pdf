@@ -11,7 +11,7 @@ if %errorLevel% neq 0 (
     echo This script requires administrator rights.
     echo Relaunching with admin privileges...
     powershell -Command "Start-Process '%~f0' -Verb RunAs"
-    goto :end
+    exit /b
 )
 
 echo.
@@ -46,16 +46,31 @@ if %PYTHON_FOUND% neq 0 (
         )
 
         echo Running Python installer...
-        "%PYTHON_INSTALLER%" /quiet InstallAllUsers=1 PrependPath=1 Include_pip=1
+        :: Use start /wait so cmd does NOT get closed by Windows
+        start /wait "" "%PYTHON_INSTALLER%" /passive InstallAllUsers=1 PrependPath=1 Include_pip=1
 
         echo Waiting for installation to finish...
-        timeout /t 5 >nul
+        timeout /t 3 >nul
 
+        :: Re-check python (PATH may not be updated yet)
         python --version >nul 2>&1
         if %errorlevel% neq 0 (
-            echo Python installation failed.
-            set EXIT_CODE=1
-            goto :end
+            echo Python still not found — manually adding to PATH...
+
+            :: Try standard install paths
+            if exist "C:\Program Files\Python312\python.exe" (
+                setx PATH "%PATH%;C:\Program Files\Python312\;C:\Program Files\Python312\Scripts\" >nul
+            ) else if exist "%LocalAppData%\Programs\Python\Python312\python.exe" (
+                setx PATH "%PATH%;%LocalAppData%\Programs\Python\Python312\;%LocalAppData%\Programs\Python\Python312\Scripts\" >nul
+            )
+
+            :: Try again
+            python --version >nul 2>&1
+            if %errorlevel% neq 0 (
+                echo Python installation failed.
+                set EXIT_CODE=1
+                goto :end
+            )
         )
 
     ) else (
@@ -84,7 +99,6 @@ if %TESS_FOUND% neq 0 (
     if /I "%INSTALL_TESS%"=="Y" (
         echo Downloading Tesseract installer...
 
-        :: Official UB Mannheim build (most used on Windows)
         set TESS_URL=https://digi.bib.uni-mannheim.de/tesseract/tesseract-ocr-w64-setup-5.3.4.20240503.exe
         set TESS_INSTALLER=tesseract-ocr-w64-setup-5.3.4.20240503.exe
 
@@ -96,10 +110,10 @@ if %TESS_FOUND% neq 0 (
         )
 
         echo Running Tesseract installer...
-        "%TESS_INSTALLER%" /SILENT
+        start /wait "" "%TESS_INSTALLER%" /SILENT
 
         echo Waiting for installation...
-        timeout /t 5 >nul
+        timeout /t 2 >nul
 
         where tesseract >nul 2>&1
         if %errorlevel% neq 0 (
@@ -124,7 +138,6 @@ echo Checking for Red PDF installation...
 
 if not exist "ui.py" (
 
-
     set ZIP_URL=https://github.com/stanislavsabev/red_pdf/archive/refs/heads/main.zip
     set ZIP_FILE=red_pdf-main.zip
 
@@ -138,15 +151,12 @@ if not exist "ui.py" (
 
     echo Unpacking zip...
     powershell -Command "Expand-Archive -Path '%ZIP_FILE%' -DestinationPath . -Force"
-    del "%ZIP_FILE%"
 
+    del "%ZIP_FILE%"
     echo Repository extracted.
     echo.
 
-
-    :: ===================================================
-    :: 4. IDENTIFY EXTRACTED FOLDER
-    :: ===================================================
+    :: Identify extracted folder
     for /d %%D in (*-main) do set PROJECT_DIR=%%D
 
     if not defined PROJECT_DIR (
@@ -164,12 +174,10 @@ if not exist "ui.py" (
 
 
 :: ===================================================
-:: 5. CREATE & ACTIVATE VIRTUAL ENVIRONMENT
+:: 4. CREATE & ACTIVATE VIRTUAL ENVIRONMENT
 :: ===================================================
 if not exist "venv" (
-
     echo Creating virtual environment...
-
     python -m venv venv
     if %errorlevel% neq 0 (
         echo Failed to create virtual environment.
@@ -177,8 +185,7 @@ if not exist "venv" (
         goto :end
     )
 ) else (
-    echo Creating virtual environment skipped.
-
+    echo Virtual environment already exists.
 )
 
 echo Activating virtual environment...
@@ -186,7 +193,7 @@ call venv\Scripts\activate
 
 
 :: ===================================================
-:: 6. INSTALL PYTHON DEPENDENCIES
+:: 5. INSTALL PYTHON DEPENDENCIES
 :: ===================================================
 if exist requirements.txt (
     echo Installing packages from requirements.txt...
@@ -202,7 +209,7 @@ echo Setup complete!
 echo ================================================
 
 :end
-if %EXIT_CODE% equ 1 (
-    pause
-)
-exit /b
+echo.
+echo Exiting with code: %EXIT_CODE%
+pause
+exit /b %EXIT_CODE%
