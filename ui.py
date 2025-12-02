@@ -1,6 +1,9 @@
 """Example for how to use the `qspreadsheet` package."""
 
 import sys
+import logging
+from logging.handlers import RotatingFileHandler
+
 from PySide6.QtCore import QPoint, QSettings, QSize, QThread, Signal, QObject, Qt
 from PySide6.QtGui import QCloseEvent, QIcon
 from PySide6.QtWidgets import (
@@ -20,6 +23,8 @@ from PySide6.QtWidgets import (
 
 import red_pdf
 from version import __version__
+
+logger = logging.getLogger("red_pdf")
 
 
 class ProcessWorker(QObject):
@@ -54,8 +59,8 @@ class ProcessWorker(QObject):
             self.progress.emit(0)
             
             # Call the main processing function
-            report_name = red_pdf.main(self.folder_path, progress_callback=self.progress_callback)
-            
+            result = red_pdf.main(self.folder_path, progress_callback=self.progress_callback)
+
             if self.stop_requested:
                 self.status.emit("Processing cancelled.")
                 self.finished.emit(False, "Processing was cancelled.")
@@ -63,7 +68,7 @@ class ProcessWorker(QObject):
             
             self.progress.emit(100)
             self.status.emit("Processing complete!")
-            self.finished.emit(True, report_name)
+            self.finished.emit(True, result)
         except Exception as e:
             self.status.emit(f"Error: {str(e)}")
             self.finished.emit(False, f"Error: {str(e)}")
@@ -277,8 +282,14 @@ def main():
     window = MainWindow()
 
     window.show()
-    sys.exit(app.exec_())
+    sys.exit(app.exec())
 
 
-if __name__ == '__main__':
+if __name__ == "__main__":
+    logging.basicConfig(
+        handlers=[RotatingFileHandler("app.log", maxBytes=500_000, backupCount=3)],
+        level=logging.DEBUG,
+        format="%(asctime)s - %(message)s"
+    )
+    logging.getLogger("pytesseract").setLevel(logging.WARNING)
     main()

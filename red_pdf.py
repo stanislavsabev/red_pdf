@@ -355,7 +355,6 @@ def write_records_csv(records: list[ResultRecord], out_path: Path):
     - `out_path` can be a `str` or `pathlib.Path`.
     """
     field_names = [f.name for f in fields(ResultRecord)]
-
     with out_path.open("w", newline="", encoding="utf-8") as fh:
         writer = csv.DictWriter(fh, fieldnames=field_names)
         writer.writeheader()
@@ -364,8 +363,8 @@ def write_records_csv(records: list[ResultRecord], out_path: Path):
             writer.writerow(row)
 
 
-def write_log(now, report_name, reconstructed):
-    with open("log.log", mode="w") as f:
+def write_results(now, report_name, reconstructed):
+    with open("run.log", mode="a") as f:
         f.write(f"{now}, {report_name}:\n")
         f.write(f"\treconstructed {len(reconstructed)} tables\n")
         for k, cells in reconstructed.items():
@@ -418,7 +417,7 @@ def main(
     write_records_csv(records=records, out_path=out_path)
     if reconstructed:
         try:
-            write_log(now, out_path.absolute(), reconstructed)
+            write_results(now, out_path.absolute(), reconstructed)
         except Exception:
             pass
     return str(out_path.absolute())
