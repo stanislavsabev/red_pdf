@@ -1,5 +1,5 @@
 @echo off
-setlocal enableextensions EnableDelayedExpansion
+setlocal enableextensions
 set SELF=%~n0
 set EXIT_CODE=
 
@@ -29,62 +29,49 @@ python --version >nul 2>&1
 set PYTHON_FOUND=%errorlevel%
 
 if !PYTHON_FOUND! neq 0 (
-    echo Python not found on this system.
-    set /p INSTALL_PY="Download Python 3.12 now? (Y/N): "
-
-    if /I "!INSTALL_PY!"=="Y" (
+    echo Python not installed on this system.
+    set PYTHON_INSTALLER="python-3.12.0-amd64.exe"
+    if not exist "%TESS_INSTALLER%" (
         echo Downloading Python 3.12 installer...
 
         set PYTHON_URL=https://www.python.org/ftp/python/3.12.0/python-3.12.0-amd64.exe
-        set PYTHON_INSTALLER="python-3.12.0-amd64.exe"
-
-        curl -L "!PYTHON_URL!" -o "!PYTHON_INSTALLER!"
-        if not exist "!PYTHON_INSTALLER!" (
+        curl -L "%PYTHON_URL%" -o "%PYTHON_INSTALLER%"
+        if not exist "%PYTHON_INSTALLER%" (
             echo Failed to download Python installer.
             set EXIT_CODE=1
             goto :end
         )
-
     ) else (
-        echo Python installation aborted.
-        goto :end
+        echo Python download skipped.
     )
+) else (
+    echo Python found:
+    python --version
+    echo.
 )
-
-echo Python found:
-python --version
-echo.
-
 
 :: ===================================================
 :: 2. CHECK FOR TESSERACT OCR
 :: ===================================================
-echo Checking for Tesseract installation...
+echo Checking for Tesseract download...
+set TESS_INSTALLER="tesseract-ocr-w64-setup-5.3.4.20240503.exe"
 
-where tesseract >nul 2>&1
-set TESS_FOUND=%errorlevel%
+if not exist "%TESS_INSTALLER%" (
+    echo Tesseract not found.
+    echo Downloading Tesseract installer...
 
-if !TESS_FOUND! neq 0 (
-    echo Tesseract not found on this system.
-    set /p INSTALL_TESS="Download Tesseract OCR now? (Y/N): "
-
-    if /I "!INSTALL_TESS!"=="Y" (
-        echo Downloading Tesseract installer...
-
-        set TESS_URL=https://digi.bib.uni-mannheim.de/tesseract/tesseract-ocr-w64-setup-5.3.4.20240503.exe
-        set TESS_INSTALLER="tesseract-ocr-w64-setup-5.3.4.20240503.exe"
-
-        curl -L "!TESS_URL!" -o "!TESS_INSTALLER!"
-        if not exist "!TESS_INSTALLER!" (
-            echo Failed to download Tesseract installer.
-            set EXIT_CODE=1
-            goto :end
-        )
-
-    ) else (
-        echo Tesseract installation skipped.
+    set TESS_URL=https://digi.bib.uni-mannheim.de/tesseract/tesseract-ocr-w64-setup-5.3.4.20240503.exe
+    curl -L "%TESS_URL%" -o "%TESS_INSTALLER%"
+    if not exist "%TESS_INSTALLER%" (
+        echo Failed to download Tesseract installer.
+        set EXIT_CODE=1
+        goto :end
     )
+
+) else (
+    echo Tesseract download skipped.
 )
+
 
 
 :: ===================================================
@@ -92,23 +79,24 @@ if !TESS_FOUND! neq 0 (
 :: ===================================================
 echo Checking for Red PDF installation...
 
-if not exist "ui.py" (
-
+if exist "version.py" (
+    echo Red PDF installation skipped.
+) else (
     set ZIP_URL=https://github.com/stanislavsabev/red_pdf/archive/refs/heads/main.zip
     set ZIP_FILE=red_pdf-main.zip
 
     echo Downloading GitHub project...
-    curl -L "!ZIP_URL!" -o "!ZIP_FILE!"
-    if not exist "!ZIP_FILE!" (
+    curl -L "%ZIP_URL%" -o "%ZIP_FILE%"
+    if not exist "%ZIP_FILE%" (
         echo Failed to download GitHub zip.
         set EXIT_CODE=1
         goto :end
     )
 
     echo Unpacking zip...
-    powershell -Command "Expand-Archive -Path '!ZIP_FILE!' -DestinationPath . -Force"
+    powershell -Command "Expand-Archive -Path '%!%ZIP_FILE%!%' -DestinationPath . -Force"
 
-    del "!ZIP_FILE!"
+    del "%ZIP_FILE%"
     echo Repository extracted.
     echo.
 
@@ -121,11 +109,8 @@ if not exist "ui.py" (
         goto :end
     )
 
-    echo Project directory found: !PROJECT_DIR!
-    cd "!PROJECT_DIR!"
+    echo Project directory found: %PROJECT_DIR%
 
-) else (
-    echo Red PDF installation skipped.
 )
 
 
