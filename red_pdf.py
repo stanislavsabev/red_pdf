@@ -1,6 +1,6 @@
-from dataclasses import asdict, dataclass, fields
+from dataclasses import asdict, dataclass
 from datetime import datetime
-import csv
+import pandas as pd
 from cv2.typing import MatLike
 from pathlib import Path
 from typing import Any, Callable, TypeAlias
@@ -348,29 +348,15 @@ def process_ocr(page: Page) -> list[ResultRecord]:
     return records
 
 
-def write_records_csv(records: list[ResultRecord], out_path: Path):
+def write_records_csv(records: list[ResultRecord], out_path: str):
     """Write a list of ResultRecord dataclass instances to a CSV file.
 
     - `records` may be empty; a CSV with only headers will be created.
     - `out_path` can be a `str` or `pathlib.Path`.
     """
-    field_names = [f.name for f in fields(ResultRecord)]
-    with out_path.open("w", newline="", encoding="utf-8") as fh:
-        writer = csv.DictWriter(fh, fieldnames=field_names)
-        writer.writeheader()
-        for r in records:
-            row = asdict(r)
-            writer.writerow(row)
-
-
-def write_results(now, report_name, reconstructed):
-    with open("run.log", mode="a") as f:
-        f.write(f"{now}, {report_name}:\n")
-        f.write(f"\treconstructed {len(reconstructed)} tables\n")
-        for k, cells in reconstructed.items():
-            for row, col in list(cells):
-                f.write(f"\t{k}, ({row}, {col})\n")
-
+    df = pd.DataFrame([asdict(r) for r in records])
+    df.to_csv(out_path, sep="\t", index=False, encoding="utf-8-sig")
+    # df.to_excel(out_path.replace(".csv", ".xlsx"), index=False)
 
 def main(
     src_folder, progress_callback: Callable[[str, int | None], None] | None = None
@@ -413,20 +399,17 @@ def main(
                 reconstructed[f"{page.pdf_name}:{page.pagenum}"] = page.reconstructed
 
     now = datetime.now().strftime("%d-%m-%Y_%H:%M.%S")
-    out_path = Path(src_folder).joinpath(f"report_{now}.csv")
+
+    
+    out_path = str(Path(src_folder).joinpath(f"report_{now}.csv").absolute()) 
     write_records_csv(records=records, out_path=out_path)
-    if reconstructed:
-        try:
-            write_results(now, out_path.absolute(), reconstructed)
-        except Exception:
-            pass
-    return str(out_path.absolute())
+    return out_path
 
 
 if __name__ == "__main__":
     import sys
 
-    logging.basicConfig(level=logging.DEBUG)
+    logging.basicConfig(level=logging.DEBUG, encoding="utf-8")
     logging.getLogger("pytesseract").setLevel(logging.WARNING)
     if not len(sys.argv) == 2:
         ValueError("Please provide source folder path as argument")

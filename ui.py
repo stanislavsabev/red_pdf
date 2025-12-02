@@ -159,7 +159,7 @@ class MainWindow(QMainWindow):
         
         # Add status bar with version (right-aligned)
         version_label = QLabel(f"v{__version__}")
-        version_label.setAlignment(Qt.AlignRight | Qt.AlignVCenter)
+        version_label.setAlignment(Qt.AlignmentFlag.AlignRight | Qt.AlignmentFlag.AlignVCenter)
         self.statusBar().addPermanentWidget(version_label)
         
         self.load_settings()
@@ -261,12 +261,13 @@ class MainWindow(QMainWindow):
         self.start_button.setEnabled(True)
         
         if success:
+            logger.info(f"Successfully processed PDFs, result save at : {message}.")
             # Display results path in the text box
-            folder = self.folder_input.text().strip()
-            results_path = f"{folder}/results.csv"
+            results_path = message
             self.results_display.setText(f"Results saved to:\n{results_path}")
             QMessageBox.information(self, "Success", "Successfully processed PDFs.")
         else:
+            logger.error(f"Error - {message}")
             QMessageBox.critical(self, "Error", message)
         
         # Clean up thread
@@ -284,12 +285,15 @@ def main():
     window.show()
     sys.exit(app.exec())
 
-
 if __name__ == "__main__":
     logging.basicConfig(
-        handlers=[RotatingFileHandler("app.log", maxBytes=500_000, backupCount=3)],
+        handlers=[
+            RotatingFileHandler("app.log", maxBytes=500_000, backupCount=3),
+            # logging.StreamHandler(sys.stdout)
+        ],
         level=logging.DEBUG,
-        format="%(asctime)s - %(message)s"
+        format="%(asctime)s %(levelname)8s - %(message)s",
+        encoding="utf-8",
     )
     logging.getLogger("pytesseract").setLevel(logging.WARNING)
     main()
