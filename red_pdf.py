@@ -1,6 +1,6 @@
-from dataclasses import asdict, dataclass
+from dataclasses import asdict, dataclass, fields
 from datetime import datetime
-import pandas as pd
+import csv
 from cv2.typing import MatLike
 from pathlib import Path
 from typing import Any, Callable, TypeAlias
@@ -354,9 +354,15 @@ def write_records_csv(records: list[ResultRecord], out_path: str):
     - `records` may be empty; a CSV with only headers will be created.
     - `out_path` can be a `str` or `pathlib.Path`.
     """
-    df = pd.DataFrame([asdict(r) for r in records])
-    df.to_csv(out_path, sep="\t", index=False, encoding="utf-8-sig")
-    # df.to_excel(out_path.replace(".csv", ".xlsx"), index=False)
+    field_names = [f.name for f in fields(ResultRecord)]
+    with open(out_path, "w", newline="", encoding="utf-8-sig") as f:
+        writer = csv.DictWriter(f, fieldnames=field_names)
+        writer.writeheader()
+        for r in records:
+            row = asdict(r)
+            writer.writerow(row)
+    logger.debug(f"Finished writing {out_path}")
+
 
 def main(
     src_folder, progress_callback: Callable[[str, int | None], None] | None = None
@@ -398,18 +404,26 @@ def main(
             if page.reconstructed:
                 reconstructed[f"{page.pdf_name}:{page.pagenum}"] = page.reconstructed
 
-    now = datetime.now().strftime("%d-%m-%Y_%H:%M.%S")
+    now = datetime.now().strftime("%d-%m-%Y_%H%M.%S")
 
-    
-    out_path = str(Path(src_folder).joinpath(f"report_{now}.csv").absolute()) 
+    out_path = str(Path(src_folder).joinpath(f"report_{now}.csv").absolute())
     write_records_csv(records=records, out_path=out_path)
     return out_path
 
 
 if __name__ == "__main__":
     import sys
+    from logging.handlers import RotatingFileHandler
 
-    logging.basicConfig(level=logging.DEBUG, encoding="utf-8")
+    logging.basicConfig(
+        handlers=[
+            RotatingFileHandler("app.log", maxBytes=500_000, backupCount=3),
+            # logging.StreamHandler(sys.stdout)
+        ],
+        level=logging.DEBUG,
+        format="%(asctime)s %(levelname)8s - %(message)s",
+        encoding="utf-8",
+    )
     logging.getLogger("pytesseract").setLevel(logging.WARNING)
     if not len(sys.argv) == 2:
         ValueError("Please provide source folder path as argument")
