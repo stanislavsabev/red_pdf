@@ -356,7 +356,7 @@ def write_records_csv(records: list[ResultRecord], out_path: str):
     """
     field_names = [f.name for f in fields(ResultRecord)]
     with open(out_path, "w", newline="", encoding="utf-8-sig") as f:
-        writer = csv.DictWriter(f, fieldnames=field_names)
+        writer = csv.DictWriter(f, fieldnames=field_names, delimiter=";", quoting=csv.QUOTE_MINIMAL)
         writer.writeheader()
         for r in records:
             row = asdict(r)
